@@ -11,8 +11,10 @@ for player to interact with the game
 ---UPDATE---
 Organized as such:
 CardDeck is own contained class
+Hand is its own class
 Dealer controls the deck object (as in real life)
 Players share a dealer object to request dealer methods
+Players each have a Hand object
 
 
 --STILL TO COME--
@@ -22,17 +24,28 @@ insurance
 double down
 bet payouts
 
-UUUUGGGGHHHHHHHHHH! Create a hand class. It will ultimately be the easiest way to
-work with all scenarios of play. Much easier than storing cards and totals as 
-arrays of arrays of arrays of arrays of arrays....
-might involve changing less code than I think. 
-
+Wants:
 maybe a bank for each player?
+A helper function for valid inputs, currently have a fair amount of repeated code
+    that looks like:
+        valid = False
+        while valid == False:
+            so on and so forth
 
 
 '''
 
 import random
+
+def player_banner(i: int):
+    print(' ---------')
+    print(f'| Player{i + 1} |')
+    print(' ---------')
+
+def dealer_banner():
+    print(' ---------')
+    print(f'| Dealer |')
+    print(' ---------')
 
 class CardDeck():
 
@@ -52,6 +65,7 @@ class Hand():
         self.stand = False
         self.blackjack = False
         self.bust = False
+        self.bet = 0
 
     def calc_total(self):
         # re-work this to handle split hands appropriately. Looks like I need to confine each hand to
@@ -66,23 +80,24 @@ class Hand():
                 self.total = list(map(lambda x: x+1, self.total))
                 temp = list(map(lambda x: x+11, temp))
                 self.total.extend(temp)
-                self.total = list(filter(lambda x : x < 22, self.total))
             else:
                 self.total = list(map(lambda x: x + card, self.total))
         
-        if min(self.total) > 21:
+        self.total = list(filter(lambda x : x < 22, self.total)) # filter out bust scores
+        self.total = list(sorted(set(self.total)))  # remove duplicate total entries
+        if not self.total: # check if only bust scores existed before filtering (resulting in empty list)
             self.bust = True
+            print('Oh no! BUST!')
             self.stand = True
         elif 21 in self.total:
-            self.blackjack = True
             self.stand = True
 
 class Player():
 
     def __init__(self, dealer = None) -> None:
-        self.bet = -1
         self.dealer = dealer
         self.hand = [Hand()]
+        self.bank = 200
 
     def place_bet(self):
         valid = False
@@ -94,7 +109,8 @@ class Player():
             elif int(wager) > 200:
                 valid = False
                 print("Wagers cannot exceed $200 at this table")
-        self.bet = int(wager)
+        self.hand[0].bet = int(wager)
+        self.bank -= int(wager)
     
     def take_card(self, card: tuple, hand_index: int = 0):   # Player should always be passed a card
         '''
@@ -107,38 +123,109 @@ class Player():
         self.hand[hand_index].cards.append(card)
         self.hand[hand_index].calc_total()
 
+    def show_hand(self, hand_index: int = 0):
+        holding = [hand.cards for hand in self.hand]
+        totals = [hand.total for hand in self.hand]
+        #return self.hand[hand_index].cards, self.hand[hand_index].total
+        return holding, totals
+    
+    def check_blackjack(self, hand_index: int = 0):
+        self.hand[hand_index].calc_total()
+        if 21 in self.hand[hand_index].total:
+            self.hand[hand_index].blackjack = True
+
     def check_split(self, hand_index: int = 0):
-        if self.hand[hand_index].cards[0] == self.hand[hand_index].cards[1]:
+        if self.hand[hand_index].cards[0][1] == self.hand[hand_index].cards[1][1]:
             valid = False
             while valid == False:
                 valid = True
-                split = input('Split your hand? y/n')
+                print(self.hand[hand_index].cards)
+                split = input('Split your hand? y/n ')
                 if split.lower() == 'y':
                     self.split_hand(hand_index)
                 elif split.lower() == 'n':
-                    break
+                    return
                 else:
-                    print("Invalid input. Try 'y' or 'n'")
+                    print("Invalid input. Try 'y' or 'n' ")
+                    valid = False
 
     def split_hand(self, hand_index: int = 0):
         # oooohhhh take a look at this for calling the dealer to deal a second hand in self.cards[]
+
+        # First split the hand into two new hands
         self.hand.append(Hand())
-        self.take_card(self.hand[hand_index].pop(), len(self.hand) - 1)
+        self.take_card(self.hand[hand_index].cards.pop(), len(self.hand) - 1)
         
-        pass
+        # then deal one to the each of the two hands
+        self.take_card(self.dealer.deal_one())
+        self.take_card(self.dealer.deal_one(), len(self.hand) - 1)
 
-    def double_down(self):
-        self.bet = self.bet*2
+        #apply same bet to second hand, doubling bet
+        self.hand[len(self.hand) - 1].bet =  self.hand[hand_index].bet
+        self.bank -= self.hand[hand_index].bet
 
-    def action_hit(self):
-        self.hand.cards.append(self.dealer.deal_one())
-        self.hand.calc_total()
+        # check/update the two hand totals
+        self.hand[hand_index].calc_total()
+        self.hand[len(self.hand) - 1].calc_total()
 
-    def action_stand(self):
-        self.hand.stand = True
+    def check_double_down(self, hand_index: int = 0):
+        dbl_vals = {9, 10, 11}
+        hand_set = dbl_vals.intersection(set(self.hand[hand_index].total))
+        if hand_set and self.hand[hand_index].blackjack == False:
+            valid = False
+            while valid == False:
+                valid = True
+                print(self.hand[hand_index].cards)
+                double_answer = input('Would you like to double down? ')
+                if double_answer.lower() in 'yes':
+                    self.double_down()
+                elif double_answer.lower() in 'no':
+                    return
+                else:
+                    print('Invalid entry, please choose y/n ')
+                    valid = False
 
-    def play_hand(self):
-        self.check_split()
+    def double_down(self, hand_index: int = 0):
+        self.hand[hand_index].bet *= 2
+        self.action_hit(hand_index)
+        self.hand[hand_index].calc_total()
+        self.hand[hand_index].stand = True
+
+    def action_hit(self, hand_index: int = 0):
+        self.hand[hand_index].cards.append(self.dealer.deal_one())
+        self.hand[hand_index].calc_total()
+
+    def action_stand(self, hand_index: int = 0):
+        self.hand[hand_index].stand = True
+
+    def play_hand(self, hand_index: int = 0): # currently only plays the first hand of a split
+        for hand_index in range(len(self.hand)):
+            self.dealer.show_table()
+            self.check_blackjack(hand_index)
+            self.check_split(hand_index)
+            self.check_double_down(hand_index)
+            while self.hand[hand_index].stand == False:
+                valid = False
+                for hand_index, hand in enumerate(self.hand):
+                    while valid == False:
+                        valid = True
+                        card_list, total = self.show_hand(hand_index)
+                        print(card_list)
+                        print(f'TOTAL: {total}')
+                        decision = input('Would you like to hit or stand? (enter "hit" or "stand") ')
+                        if decision.lower() in ['hit', 'stand']:
+                            if decision.lower() == 'hit':
+                                self.action_hit(hand_index)
+                            else:
+                                self.action_stand(hand_index)
+                        else:
+                            print('Invalid input')
+                            valid = False
+            print(self.hand[hand_index].cards)
+            print(self.hand[hand_index].total)
+            
+
+
         #if self.total
 
 
@@ -149,29 +236,102 @@ class Dealer(Player):
         super().__init__()
         self.table = []     # Table will be a list of Player objects
         self.deck = deck
+        self.hand = Hand()
+        
     
     def create_table(self, table: list[Player()]):
         self.table = table[:]
 
+    def take_bets(self):
+        for i, player in enumerate(self.table):
+            player_banner(i)
+            player.place_bet()
+            
 
     def deal(self):
-        for x in range(2):
+        for _ in range(2):
             for player in self.table:
                 player.take_card(self.deck.draw_card())
-            self.take_card(self.deck.draw_card())
+            self.hand.cards.append(self.deck.draw_card())
+        
+    def show_table(self, end_game: bool = False):
+        print(' ---------------------------------------------')
+        print(f'| Dealer showing:   {self.show_card(end_game)}')
+        for i, player in enumerate(self.table):
+            hand, tot = player.show_hand()
+            for k, cards in enumerate(hand):
+                print(f'| Player{i + 1} showing: {cards} \t TOTAL: {tot[k]}')
+        print(' ---------------------------------------------') 
+        
 
+    def show_card(self, end_game: bool = False):
+        if end_game == False:
+            return self.hand.cards[0]
+        else:
+            return self.hand.cards
 
     def deal_one(self):
         return self.deck.draw_card()
     
+
     def dealer_play(self):
-        while len(list(filter(lambda x : x < 18), self.total) == len(self.total)):
-            self.action_hit()
-            self.calc_total()
+        #while len(list(filter(lambda x : x < 18), self.total)) == len(self.total):
+            # the above is problematic, only checks to see if some value is 18+, but could be a bust
+            # when in real life the dealer would convert the ACE to a 1 and keep going without busting
+            # HOW TO RE-WRITE?
+            # Hand.calc_total() filters values over 21 when adding computing ACE values
+            # perhaps a simple < while max(self.hand.total) < 17 would work sufficiently well?
+        self.hand.calc_total()
+        while self.hand.total and max(self.hand.total) < 17:
+            self.hand.cards.append(self.deal_one())
+            self.hand.calc_total()
+        print(self.hand.cards)
+        print(self.hand.total)
 
     def players_play(self):
         for player in self.table:
             player.play_hand()
+
+    def reveal_hand(self):
+        return self.hand.cards
+
+    def determine_winners(self):
+        self.show_table(end_game=True)
+        if self.hand.bust == True:
+            for i, player in enumerate(self.table):
+                for hand in player.hand:
+                    if hand.blackjack == True:
+                        print(f'| Player{i + 1} won ${hand.bet * 1.5}')
+                        player.bank += hand.bet + hand.bet * 1.5
+                    elif hand.bust == False:
+                        player.bank += hand.bet * 2
+                        print(f'Player{i + 1} won ${hand.bet}')
+                    else:
+                        print(f'Player{i + 1} lost ${hand.bet}')
+        
+        elif self.hand.blackjack == True:
+            for i, player in enumerate(self.table):
+                for hand in player.hand:
+                    if hand.blackjack == True:
+                        player.bank += hand.bet   # push
+                        print(f'Player{i + 1} pushed')
+                    else:
+                        print(f'Player{i + 1} lost ${hand.bet}')
+        else:            
+            for i, player in enumerate(self.table):
+                for hand in player.hand:
+                    if hand.bust == True:
+                        print(f'| Player{i + 1} lost ${hand.bet}')
+                        continue
+                    elif hand.blackjack == True:
+                        print(f'| Player{i + 1} won ${hand.bet * 1.5}')
+                        player.bank += hand.bet + hand.bet * 1.5
+                    elif max(hand.total) > max(self.hand.total):
+                        print(f'| Player{i + 1} won ${hand.bet}')
+                        player.bank += hand.bet * 2
+                    else:
+                        print(f'| Player{i + 1} lost ${hand.bet}')
+                
 
 
 '''
@@ -188,6 +348,9 @@ Winners are chosen
 
 '''
 def play():
+    deck = CardDeck()
+    dealer = Dealer(deck)
+
     # first find the number of players/hands to deal
     valid = False
     while valid == False:
@@ -195,57 +358,30 @@ def play():
         num_players = input('How many players are at the table? ')
         if not num_players.isdigit():
             valid = False
-        elif int(num_players) > 6:
+        elif int(num_players) > 9:
             valid = False
     
     # next, create table
-    dealer = Dealer()
-    players_at_table = [Player(dealer) for x in range(num_players)]
+    players_at_table = [Player(dealer) for x in range(int(num_players))]
 
     dealer.create_table(players_at_table)
 
+    dealer.take_bets()
+
     # check order of play, deal cards or bet first? Either way:
     dealer.deal()
-
-    for player in players_at_table:
-        player.place_bet()
     
+    # everyone plays
+    for i, player in enumerate(players_at_table):
+        player_banner(i)
+        player.play_hand()
+    dealer_banner()
+    dealer.dealer_play()
+
+    # winnings are determined
+    dealer.determine_winners()
 
 
 
 if __name__ == '__main__':
-
-    list1 = [1, 41, 21, 12]
-    list2 = [2, 31, 18, 17]
-    list1.extend(list2)
-    list3 = sorted(list(filter(lambda x: x < 22, list1)))
-    if 21 in list3:
-        print("That's it babeeeeeee")
-
-    print(list(map(lambda x: x + 10, list2)))
-    
-    deck1 = CardDeck()
-    dealer1 = Dealer(deck1)
-    player1 = Player(dealer1)
-    player2 = Player(dealer1)
-    dealer1.create_table([player1, player2])
-    dealer1.deal()
-    print('Player 1 cards: ', player1.cards)
-    print('Player 1 score: ', player1.total)
-    print('Player 2 cards: ', player2.cards)
-    print('Player 2 score: ', player2.total)
-    print('Dealer 1 cards: ', dealer1.cards)
-    print('Dealer 1 score: ', dealer1.total)
-
-
-class Thingy():
-    def __init__(self) -> None:
-        self.item = 0
-
-    def thinger(self):
-        self.item2 = 2
-
-
-test = Thingy()
-test.thinger()
-print(test.item2)
+    play()
