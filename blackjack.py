@@ -51,11 +51,17 @@ class CardDeck():
 
     def __init__(self, num_decks = 1) -> None:
         self.deck = [(x,y) for x in ["\u2663", "\u2665", "\u2666", "\u2660"] for y in ([z for z in range(2,11)] + ['J', 'Q', 'K', 'A'])]
+        self.num_decks = num_decks
         self.deck *= num_decks
         random.shuffle(self.deck)
 
     def draw_card(self):
-        return self.deck.pop()
+        if self.deck:
+            return self.deck.pop()
+        else:
+            self.deck = [(x,y) for x in ["\u2663", "\u2665", "\u2666", "\u2660"] for y in ([z for z in range(2,11)] + ['J', 'Q', 'K', 'A'])]
+            self.deck *= self.num_decks
+            random.shuffle(self.deck)
     
 class Hand():
 
@@ -99,16 +105,32 @@ class Player():
         self.hand = [Hand()]
         self.bank = 200
 
+    def check_in(self, position: int):
+        player_banner(position - 1)
+        print(f'Hello Player{position}')
+        valid = False
+        while valid == False:
+            bank = input('Entering the table, what is your bank? $')
+            if bank.isdigit():
+                self.bank = int(bank)
+                valid = True
+            else:
+                print('Invalid input, please enter a whole dollar amount')
+
     def place_bet(self):
         valid = False
         while valid == False:
             valid = True
             wager = input('How much would you like to bet? ')
             if not wager.isdigit():
+                print('Please enter a whole dollar amount')
                 valid = False
             elif int(wager) > 200:
                 valid = False
                 print("Wagers cannot exceed $200 at this table")
+            elif int(wager) > self.bank:
+                valid = False
+                print('Insufficient bank')
         self.hand[0].bet = int(wager)
         self.bank -= int(wager)
     
@@ -135,6 +157,9 @@ class Player():
             self.hand[hand_index].blackjack = True
 
     def check_split(self, hand_index: int = 0):
+        if self.bank < self.hand[hand_index].bet:
+            print('Cannot split, insufficient bank.')
+            return
         if self.hand[hand_index].cards[0][1] == self.hand[hand_index].cards[1][1]:
             valid = False
             while valid == False:
@@ -169,6 +194,9 @@ class Player():
         self.hand[len(self.hand) - 1].calc_total()
 
     def check_double_down(self, hand_index: int = 0):
+        if self.bank < self.hand[hand_index].bet:
+            print('Cannot double down. Insufficent bank')
+            return
         dbl_vals = {9, 10, 11}
         hand_set = dbl_vals.intersection(set(self.hand[hand_index].total))
         if hand_set and self.hand[hand_index].blackjack == False:
@@ -191,6 +219,7 @@ class Player():
         self.hand[hand_index].calc_total()
         self.hand[hand_index].stand = True
 
+
     def action_hit(self, hand_index: int = 0):
         self.hand[hand_index].cards.append(self.dealer.deal_one())
         self.hand[hand_index].calc_total()
@@ -198,34 +227,36 @@ class Player():
     def action_stand(self, hand_index: int = 0):
         self.hand[hand_index].stand = True
 
-    def play_hand(self, hand_index: int = 0): # currently only plays the first hand of a split
-        for hand_index in range(len(self.hand)):
+    def play_hand(self): # currently only plays the first hand of a split
+        hand_index = 0
+        for hand in self.hand:
             self.dealer.show_table()
             self.check_blackjack(hand_index)
             self.check_split(hand_index)
             self.check_double_down(hand_index)
-            while self.hand[hand_index].stand == False:
+            while hand.stand == False:
                 valid = False
-                for hand_index, hand in enumerate(self.hand):
-                    while valid == False:
-                        valid = True
-                        card_list, total = self.show_hand(hand_index)
-                        print(card_list)
-                        print(f'TOTAL: {total}')
-                        decision = input('Would you like to hit or stand? (enter "hit" or "stand") ')
-                        if decision.lower() in ['hit', 'stand']:
-                            if decision.lower() == 'hit':
-                                self.action_hit(hand_index)
-                            else:
-                                self.action_stand(hand_index)
+                while valid == False:
+                    valid = True
+                    card_list, total = self.show_hand(hand_index)
+                    print(card_list)
+                    print(f'TOTAL: {total}')
+                    decision = input('Would you like to hit or stand? (enter "hit" or "stand") ')
+                    if decision.lower() in ['hit', 'stand']:
+                        if decision.lower() == 'hit':
+                            self.action_hit(hand_index)
                         else:
-                            print('Invalid input')
-                            valid = False
+                            self.action_stand(hand_index)
+                    else:
+                        print('Invalid input')
+                        valid = False
             print(self.hand[hand_index].cards)
             print(self.hand[hand_index].total)
+            hand_index += 1
             
-
-
+    def clear_hand(self):
+        self.hand.clear()
+        self.hand = [Hand()]
         #if self.total
 
 
@@ -245,6 +276,7 @@ class Dealer(Player):
     def take_bets(self):
         for i, player in enumerate(self.table):
             player_banner(i)
+            print(f'Bank: ${player.bank}')
             player.place_bet()
             
 
@@ -256,7 +288,7 @@ class Dealer(Player):
         
     def show_table(self, end_game: bool = False):
         print(' ---------------------------------------------')
-        print(f'| Dealer showing:   {self.show_card(end_game)}')
+        print(f'| Dealer showing:  {self.show_card(end_game)}')
         for i, player in enumerate(self.table):
             hand, tot = player.show_hand()
             for k, cards in enumerate(hand):
@@ -301,8 +333,8 @@ class Dealer(Player):
             for i, player in enumerate(self.table):
                 for hand in player.hand:
                     if hand.blackjack == True:
-                        print(f'| Player{i + 1} won ${hand.bet * 1.5}')
-                        player.bank += hand.bet + hand.bet * 1.5
+                        print(f'| Player{i + 1} won ${int(hand.bet * 1.5)}')
+                        player.bank += int(hand.bet + hand.bet * 1.5)
                     elif hand.bust == False:
                         player.bank += hand.bet * 2
                         print(f'Player{i + 1} won ${hand.bet}')
@@ -324,13 +356,39 @@ class Dealer(Player):
                         print(f'| Player{i + 1} lost ${hand.bet}')
                         continue
                     elif hand.blackjack == True:
-                        print(f'| Player{i + 1} won ${hand.bet * 1.5}')
-                        player.bank += hand.bet + hand.bet * 1.5
+                        print(f'| Player{i + 1} won ${int(hand.bet * 1.5)}')
+                        player.bank += int(hand.bet + hand.bet * 1.5)
                     elif max(hand.total) > max(self.hand.total):
                         print(f'| Player{i + 1} won ${hand.bet}')
                         player.bank += hand.bet * 2
+                    elif max(hand.total) == max(self.hand.total):
+                        print(f'| Player{i + 1} pushed')
+                        player.bank += hand.bet
                     else:
                         print(f'| Player{i + 1} lost ${hand.bet}')
+        print(' ---------------------------------------------') 
+
+    
+    def clear_hand(self):
+        self.hand = Hand()
+
+    def another_hand(self):
+        while True:
+            again = input('Would you like to play another round? y/n/bank ')
+            if again.lower() == 'y':
+                for player in self.table:
+                    player.clear_hand()
+                self.clear_hand()
+                return True
+            elif again.lower() == 'n':
+                return False
+            elif again.lower() == 'bank':
+                for i, player in enumerate(self.table):
+                    print(f'Player{i + 1} bank: ${player.bank}')
+            else:
+                print("Invalid input, please enter 'y' or 'n' ")
+        
+
                 
 
 
@@ -365,21 +423,27 @@ def play():
     players_at_table = [Player(dealer) for x in range(int(num_players))]
 
     dealer.create_table(players_at_table)
+    for i, player in enumerate(dealer.table):
+        player.check_in(i+1)
 
-    dealer.take_bets()
+    play_round = True
+    while play_round == True:    
+        dealer.take_bets()
 
-    # check order of play, deal cards or bet first? Either way:
-    dealer.deal()
-    
-    # everyone plays
-    for i, player in enumerate(players_at_table):
-        player_banner(i)
-        player.play_hand()
-    dealer_banner()
-    dealer.dealer_play()
+        # check order of play, deal cards or bet first? Either way:
+        dealer.deal()
+        
+        # everyone plays
+        for i, player in enumerate(players_at_table):
+            player_banner(i)
+            print(f'Bank: ${player.bank}')
+            player.play_hand()
+        dealer_banner()
+        dealer.dealer_play()
 
-    # winnings are determined
-    dealer.determine_winners()
+        # winnings are determined
+        dealer.determine_winners()
+        play_round = dealer.another_hand()
 
 
 
