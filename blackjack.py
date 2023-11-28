@@ -17,15 +17,7 @@ Players share a dealer object to request dealer methods
 Players each have a Hand object
 
 
---STILL TO COME--
-'Play' function, dictates the structure of the game/method calls
-splits
-insurance
-double down
-bet payouts
-
 Wants:
-maybe a bank for each player?
 A helper function for valid inputs, currently have a fair amount of repeated code
     that looks like:
         valid = False
